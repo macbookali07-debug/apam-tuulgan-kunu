@@ -207,12 +207,21 @@
                     throw new Error(result.error || `Сервер ката кайтарды (HTTP ${putResponse.status}).`);
                 }
 
-                status.innerHTML = '<div class="status success">✅ Куттуктоо ийгиликтүү жөнөтүлдү! Башкы бетке өтүңүз...</div>';
+                status.innerHTML = `
+                    <div class="status success">
+                        ✅ Куттуктооңуз ийгиликтүү жөнөтүлдү! Чин жүрөктөн ыракмат! 💐
+                        <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+                            <a href="/" style="flex:1; min-width:150px; text-align:center; text-decoration:none; background:linear-gradient(135deg,#667eea 0%,#764ba2 100%); color:white; padding:12px 18px; border-radius:12px; font-weight:600;">🏠 Башкы бетке өтүү</a>
+                            <button type="button" id="againBtn" style="flex:1; min-width:150px; background:white; color:#764ba2; border:2px solid #764ba2; padding:12px 18px; border-radius:12px; font-weight:600; cursor:pointer;">✍️ Дагы бир куттуктоо жазуу</button>
+                        </div>
+                    </div>`;
                 form.reset();
 
-                setTimeout(() => {
-                    window.location.href = '/';
-                }, 2000);
+                // Башкы бетке АВТОМАТТЫК ӨТПӨЙТ — колдонуучу өзү тандайт.
+                document.getElementById('againBtn').addEventListener('click', () => {
+                    status.innerHTML = '';
+                    document.getElementById('name').focus();
+                });
 
             } catch (error) {
                 console.error('Error:', error);
