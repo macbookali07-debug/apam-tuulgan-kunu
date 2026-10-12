@@ -8,26 +8,17 @@ module.exports = async function handler(req, res) {
   const repo = process.env.GITHUB_REPO || 'apam-tuulgan-kunu';
   const branch = process.env.GITHUB_BRANCH || 'main';
 
-  // GET: бардык куттуктоолорду кайтаруу (текшерүү/диагностика үчүн)
+  // GET: бардык куттуктоолорду кайтаруу.
+  // Репозиторий public болгондуктан, окуу үчүн токен КЕРЕГИ ЖОК —
+  // ачык raw.githubusercontent.com файлынан окуйбуз (токенсиз).
   if (req.method === 'GET') {
-    if (!token) {
-      return res.status(503).json({ error: 'Серверге GitHub токен орнотула элек.' });
-    }
     try {
-      const url = `${API_URL}/repos/${owner}/${repo}/contents/wishes.json`;
-      const headers = {
-        Authorization: `Bearer ${token}`,
-        Accept: 'application/vnd.github+json',
-        'X-GitHub-Api-Version': '2022-11-28'
-      };
-      const fileResponse = await fetch(`${url}?ref=${encodeURIComponent(branch)}`, { headers });
-      if (!fileResponse.ok) {
-        const detail = await fileResponse.text();
-        console.error('GitHub read failed:', fileResponse.status, detail);
-        return res.status(502).json({ error: 'Куттуктоолор файлын окуй алган жок. GitHub уруксаттарын текшериңиз.' });
+      const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/wishes.json?t=${Date.now()}`;
+      const rawResponse = await fetch(rawUrl);
+      if (!rawResponse.ok) {
+        return res.status(502).json({ error: 'Куттуктоолор файлын окуй алган жок.' });
       }
-      const file = await fileResponse.json();
-      const wishes = JSON.parse(Buffer.from(file.content, 'base64').toString('utf8'));
+      const wishes = await rawResponse.json();
       return res.status(200).json(wishes);
     } catch (error) {
       console.error('Wish read failed:', error);
@@ -70,7 +61,9 @@ module.exports = async function handler(req, res) {
     } else if (fileResponse.status !== 404) {
       const detail = await fileResponse.text();
       console.error('GitHub read failed:', fileResponse.status, detail);
-      return res.status(502).json({ error: 'Куттуктоолор файлын окуй алган жок. GitHub уруксаттарын текшериңиз.' });
+      return res.status(502).json({
+        error: `GitHub'дан окуу ишке ашпады (HTTP ${fileResponse.status}). Токендин "Contents: Read and write" уруксатын жана репозиторий тандоосун текшериңиз.`
+      });
     }
 
     wishes.unshift({ name, message, date: new Date().toISOString() });
@@ -93,7 +86,7 @@ module.exports = async function handler(req, res) {
       return res.status(conflict ? 409 : 502).json({
         error: conflict
           ? 'Бир убакта башка куттуктоо сакталды. Баракты жаңыртып, кайра жөнөтүңүз.'
-          : 'GitHub файлды сактаган жок. Токендин уруксатын жана репозиторийди текшериңиз.'
+          : `GitHub файлды сактаган жок (HTTP ${saveResponse.status}). Токен "Contents: Read and write" уруксатына ээ жана "apam-tuulgan-kunu" репозиторийи тандалганын текшериңиз.`
       });
     }
 
