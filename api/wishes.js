@@ -1,28 +1,63 @@
-const API_URL = 'https://api.github.com';
+// Куттуктоолорду Upstash Redis'те сактоо.
+// Токен/каттоо/карт КЕРЕГИ ЖОК — убактылуу бош база колдонулат (3 күн иштейт).
+// Узак мөөнөткө калтыруу үчүн "Claim" шилтемесин колдонсо болот (өз эсебине өткөрөт).
+
+const KV_URL =
+  process.env.KV_REST_API_URL ||
+  process.env.UPSTASH_REDIS_REST_URL ||
+  'https://lucky-hedgehog-228085.upstash.io';
+
+const KV_TOKEN =
+  process.env.KV_REST_API_TOKEN ||
+  process.env.UPSTASH_REDIS_REST_TOKEN ||
+  'gQAAAAAAA3r1AQIgcDI1YTMzYWI4OWQxOGQ0Mzg2YWNiNjU1OGQwZTVkM2QwMw';
+
+const KEY = 'wishes';
+const configured = Boolean(KV_URL && KV_TOKEN);
+
+// Upstash REST API (body-style): буйрукту JSON массиви катары жөнөтөбүз.
+async function kvCommand(command) {
+  const response = await fetch(KV_URL, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${KV_TOKEN}`,
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify(command)
+  });
+  if (!response.ok) {
+    throw new Error(`Upstash суроо ишке ашпады (HTTP ${response.status})`);
+  }
+  const data = await response.json();
+  return data.result;
+}
+
+async function readWishes() {
+  const raw = await kvCommand(['GET', KEY]);
+  if (raw == null) return [];
+  try {
+    const arr = JSON.parse(raw);
+    return Array.isArray(arr) ? arr : [];
+  } catch {
+    return [];
+  }
+}
+
+async function writeWishes(wishes) {
+  await kvCommand(['SET', KEY, JSON.stringify(wishes)]);
+}
 
 module.exports = async function handler(req, res) {
   res.setHeader('Cache-Control', 'no-store');
 
-  const token = process.env.GITHUB_TOKEN;
-  const owner = process.env.GITHUB_OWNER || 'macbookali07-debug';
-  const repo = process.env.GITHUB_REPO || 'apam-tuulgan-kunu';
-  const branch = process.env.GITHUB_BRANCH || 'main';
-
   // GET: бардык куттуктоолорду кайтаруу.
-  // Репозиторий public болгондуктан, окуу үчүн токен КЕРЕГИ ЖОК —
-  // ачык raw.githubusercontent.com файлынан окуйбуз (токенсиз).
   if (req.method === 'GET') {
+    if (!configured) return res.status(200).json([]);
     try {
-      const rawUrl = `https://raw.githubusercontent.com/${owner}/${repo}/${branch}/wishes.json?t=${Date.now()}`;
-      const rawResponse = await fetch(rawUrl);
-      if (!rawResponse.ok) {
-        return res.status(502).json({ error: 'Куттуктоолор файлын окуй алган жок.' });
-      }
-      const wishes = await rawResponse.json();
-      return res.status(200).json(wishes);
+      return res.status(200).json(await readWishes());
     } catch (error) {
-      console.error('Wish read failed:', error);
-      return res.status(500).json({ error: 'Куттуктоолорду окууда ката кетти.' });
+      console.error('Куттуктоолорду окууда ката:', error);
+      return res.status(200).json([]);
     }
   }
 
@@ -31,8 +66,8 @@ module.exports = async function handler(req, res) {
     return res.status(405).json({ error: 'Бул сурам колдоого алынбайт.' });
   }
 
-  if (!token) {
-    return res.status(503).json({ error: 'Серверге GitHub токен орнотула элек.' });
+  if (!configured) {
+    return res.status(503).json({ error: 'Сактоо системасы даяр эмес.' });
   }
 
   const name = typeof req.body?.name === 'string' ? req.body.name.trim() : '';
@@ -41,58 +76,14 @@ module.exports = async function handler(req, res) {
     return res.status(400).json({ error: 'Аты 1–80, куттуктоо 1–2000 белги болушу керек.' });
   }
 
-  const url = `${API_URL}/repos/${owner}/${repo}/contents/wishes.json`;
-  const headers = {
-    Authorization: `Bearer ${token}`,
-    Accept: 'application/vnd.github+json',
-    'X-GitHub-Api-Version': '2022-11-28'
-  };
-
   try {
-    const fileResponse = await fetch(`${url}?ref=${encodeURIComponent(branch)}`, { headers });
-    let wishes = [];
-    let sha;
-
-    if (fileResponse.ok) {
-      const file = await fileResponse.json();
-      sha = file.sha;
-      wishes = JSON.parse(Buffer.from(file.content, 'base64').toString('utf8'));
-      if (!Array.isArray(wishes)) throw new Error('wishes.json массив болушу керек.');
-    } else if (fileResponse.status !== 404) {
-      const detail = await fileResponse.text();
-      console.error('GitHub read failed:', fileResponse.status, detail);
-      return res.status(502).json({
-        error: `GitHub'дан окуу ишке ашпады (HTTP ${fileResponse.status}). Токендин "Contents: Read and write" уруксатын жана репозиторий тандоосун текшериңиз.`
-      });
-    }
-
+    const wishes = await readWishes();
     wishes.unshift({ name, message, date: new Date().toISOString() });
-    const content = Buffer.from(`${JSON.stringify(wishes, null, 2)}\n`, 'utf8').toString('base64');
-    const saveResponse = await fetch(url, {
-      method: 'PUT',
-      headers: { ...headers, 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        message: `Жаңы куттуктоо: ${name}`,
-        content,
-        branch,
-        ...(sha ? { sha } : {})
-      })
-    });
-
-    if (!saveResponse.ok) {
-      const detail = await saveResponse.text();
-      console.error('GitHub write failed:', saveResponse.status, detail);
-      const conflict = saveResponse.status === 409 || saveResponse.status === 422;
-      return res.status(conflict ? 409 : 502).json({
-        error: conflict
-          ? 'Бир убакта башка куттуктоо сакталды. Баракты жаңыртып, кайра жөнөтүңүз.'
-          : `GitHub файлды сактаган жок (HTTP ${saveResponse.status}). Токен "Contents: Read and write" уруксатына ээ жана "apam-tuulgan-kunu" репозиторийи тандалганын текшериңиз.`
-      });
-    }
-
+    await writeWishes(wishes);
     return res.status(201).json({ ok: true });
   } catch (error) {
-    console.error('Wish submission failed:', error);
+    console.error('Куттуктоону сактоодо ката:', error);
     return res.status(500).json({ error: 'Куттуктоону сактоодо ката кетти. Кайра аракет кылыңыз.' });
   }
 };
+
