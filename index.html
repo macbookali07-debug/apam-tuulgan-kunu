@@ -218,7 +218,7 @@
                 <h3>📝 Куттуктоо Жазуу</h3>
                 <p>Куттуктоо жазуу үчүн төмөндөгү баскычты басыңыз</p>
                 <br>
-                <a href="form.html">🎁 Куттуктоо Жазуу</a>
+                <a href="https://apam-tuulgan-kunu.vercel.app/">🎁 Куттуктоо Жазуу</a>
             </div>
 
             <div class="wishes-section">
@@ -231,23 +231,13 @@
     </div>
 
     <script>
-        // GitHub репозитерийиниздин маалыматтары
+        // Ачык репозиторийден куттуктоолорду окуйбуз. Жазуу сервер аркылуу жүргүзүлөт.
         const CONFIG = {
             owner: 'macbookali07-debug', // GitHub колдонуучу атыңыз
             repo: 'apam-tuulgan-kunu', // Репозитерий аты
-            token: 'ghp_xxxxxxxxxxxxxxxxxxxxxx', // GitHub Personal Access Token (бул жерди өзгөртүңүз!)
-            filePath: 'wishes.json' // Куттуктоолор сакталган файл
+            branch: 'main',
+            filePath: 'wishes.json'
         };
-
-        // UTF-8 коддоо функциясы
-        function utf8_to_b64(str) {
-            return window.btoa(unescape(encodeURIComponent(str)));
-        }
-
-        // UTF-8 декоддоо функциясы
-        function b64_to_utf8(str) {
-            return decodeURIComponent(escape(window.atob(str)));
-        }
 
         // Куттуктоолорду деподон алуу
         async function loadWishes() {
@@ -256,28 +246,14 @@
 
             try {
                 const response = await fetch(
-                    `https://api.github.com/repos/${CONFIG.owner}/${CONFIG.repo}/contents/${CONFIG.filePath}`,
-                    {
-                        headers: {
-                            'Authorization': `token ${CONFIG.token}`,
-                            'Accept': 'application/vnd.github.v3+json'
-                        }
-                    }
+                    `https://raw.githubusercontent.com/${CONFIG.owner}/${CONFIG.repo}/${CONFIG.branch}/${CONFIG.filePath}?t=${Date.now()}`
                 );
 
                 if (!response.ok) {
-                    if (response.status === 404) {
-                        // Файл жок, жаңы түзүү
-                        await createWishesFile();
-                        container.innerHTML = '<p style="text-align: center; color: #999; padding: 30px;">Азырынча куттуктоо жок. Биринчи болуп куттуктаңыз! 🎉</p>';
-                        return;
-                    }
                     throw new Error('Куттуктоолорду жүктөө мүмкүн эмес');
                 }
 
-                const data = await response.json();
-                const content = b64_to_utf8(data.content);
-                const wishes = JSON.parse(content);
+                const wishes = await response.json();
                 displayWishes(wishes);
 
             } catch (error) {
@@ -304,26 +280,6 @@
             `).join('');
         }
 
-        // Файл түзүү (алгачкы жолу)
-        async function createWishesFile() {
-            const content = utf8_to_b64('[]');
-            await fetch(
-                `https://api.github.com/repos/${CONFIG.owner}/${CONFIG.repo}/contents/${CONFIG.filePath}`,
-                {
-                    method: 'PUT',
-                    headers: {
-                        'Authorization': `token ${CONFIG.token}`,
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/vnd.github.v3+json'
-                    },
-                    body: JSON.stringify({
-                        message: 'Куттуктоолор файлын түзүү',
-                        content: content
-                    })
-                }
-            );
-        }
-
         // HTML эскирүүдөн коргоо
         function escapeHtml(text) {
             const div = document.createElement('div');
@@ -334,8 +290,8 @@
         // Барак жүктөлгөндө куттуктоолорду алуу
         loadWishes();
 
-        // 5 секунд сайын жаңыртуу
-        setInterval(loadWishes, 5000);
+        // Баракты ар мүнөт сайын жаңыртуу
+        setInterval(loadWishes, 60000);
     </script>
 </body>
 </html>
